@@ -1,0 +1,30 @@
+<html>
+<head>
+	<link rel="stylesheet" href="styleguide.css">
+</head>
+<body>
+	<h2> Violent Crime Rate in California (2000-2013) </h2>
+
+	<img src="californiamap.png" alt="Map of California" width="300" height=""><br><br>
+
+	<div class="filter-list">
+	    <label for="year">Year (2000-2013) </label><br>
+	    <input type="text" id="year" name="year"> </input><br><br>
+
+	    <label for="county">County</label><br>
+	    <input type="text" id="county" name="county"> </input><br><br>
+
+	    <button id="filterButton">Filter</button><br>
+	</div>
+
+    <div id="legend"> 
+    	<div> <h3> Crime Rate </h3> </div>
+        <div><span class="legend-color" style="background-color: #fbb021"></span>< 1.0</div>
+        <div><span class="legend-color" style="background-color: #f68838"></span>1.0 </div>
+        <div><span class="legend-color" style="background-color: #ee3e32"></span>> 1.0</div>
+    </div>
+
+    <script src="script.js"></script>
+
+</body>
+</html>
