@@ -1,80 +1,146 @@
 import streamlit as st
 import pandas as pd
 import geopandas as gpd
-import plotly.express as px
+import plotly.graph_objs as go
+from matplotlib.colors import LinearSegmentedColormap, to_hex
 
 # Title
 st.title("Violent Crime Rate in California")
 
+# Create tabs
+tab1, tab2 = st.tabs(["Heatmap", "Crime Rate Over Time"])
+
 # Load Dataset
 @st.cache_data
 def load_data():
-    file_path = r'C:\Users\ankit\Downloads\trimmed_crime_data.xlsx'
-    data = pd.read_excel(file_path)
+    file_path = r'C:\Users\ankit\Downloads\crime_dataset.csv'
+    data = pd.read_csv(file_path)
     return data
 
 data = load_data()
 
-# Filter year
-years = sorted(data['reportyear'].unique())
-selected_year = st.selectbox("Select Year", years)
+with tab1:
+    # Filter year
+    years = sorted(data['reportyear'].unique())
+    selected_year = st.selectbox("Select Year", years)
 
-# Filter data for the selected year
-data_selected = data[data['reportyear'] == selected_year]
+    # Filter data for the selected year
+    data_selected = data[(data['reportyear'] == selected_year) & (data['strata_level_name'] == 'Violent crime total')]
 
-# Select necessary columns
-columns_to_keep = ['reportyear', 'county_name', 'rate']
-data_selected = data_selected[columns_to_keep]
+    # Select necessary columns
+    columns_to_keep = ['reportyear', 'geoname', 'rate', 'numerator']
+    data_selected = data_selected[columns_to_keep]
 
-# Handle NaN values
-data_selected = data_selected.dropna(subset=['rate'])
+    # Handle NaN values
+    data_selected = data_selected.dropna(subset=['rate'])
 
-# Load California GeoJSON data
-@st.cache_data
-def load_geojson():
-    geojson_url = "https://raw.githubusercontent.com/codeforamerica/click_that_hood/master/public/data/california-counties.geojson"
-    geojson_data = gpd.read_file(geojson_url)
-    return geojson_data
+    # Convert rate to numeric
+    data_selected['rate'] = pd.to_numeric(data_selected['rate'], errors='coerce')
 
-geojson_data = load_geojson()
+    # Handle NaN values after conversion
+    data_selected = data_selected.dropna(subset=['rate'])
 
-# Merge crime data with GeoJSON
-merged_data = geojson_data.merge(data_selected, left_on='name', right_on='county_name')
+    # Load California GeoJSON data
+    @st.cache_data
+    def load_geojson():
+        geojson_url = "https://raw.githubusercontent.com/codeforamerica/click_that_hood/master/public/data/california-counties.geojson"
+        geojson_data = gpd.read_file(geojson_url)
+        return geojson_data
 
-# Simplify geometry to reduce size
-merged_data['geometry'] = merged_data['geometry'].simplify(tolerance=0.01)
+    geojson_data = load_geojson()
 
-# Define the color scale
-color_scale = px.colors.sequential.OrRd
+    # Merge crime data with GeoJSON
+    merged_data = geojson_data.merge(data_selected, left_on='name', right_on='geoname')
 
-# Find the minimum and maximum rates
-min_rate = merged_data['rate'].min()
-max_rate = merged_data['rate'].max()
+    # Simplify geometry to reduce size
+    merged_data['geometry'] = merged_data['geometry'].simplify(tolerance=0.01)
 
-# Apply color mapping
-# Apply color mapping
-merged_data['color'] = merged_data['rate'].apply(lambda x: px.colors.sample_colorscale(color_scale, (x - min_rate) / (max_rate - min_rate))[0])
-# merged_data['color'] = merged_data['rate'].apply(lambda x: px.colors.sample_colorscale(color_scale, x / max_rate)[0])
+    # Define the custom color scale using LinearSegmentedColormap
+    color_scale = LinearSegmentedColormap.from_list("custom_scale", ["white", "lightgrey", "grey", "darkred"])
 
-# Create Heatmap
-fig = px.choropleth_mapbox(
-    merged_data,
-    geojson=merged_data.geometry,
-    locations=merged_data.index,
-    color='color',
-    mapbox_style="carto-positron",
-    zoom=4.5,
-    center={"lat": 37.0, "lon": -120.0},
-    opacity=0.6,
-    labels={'color': 'Crime Rate'},
-    title=f"Violent Crime Rate in California ({selected_year})",
-    hover_name='name',
-    hover_data=['rate']
-)
-fig.update_geos(fitbounds="locations")
-fig.update_layout(margin={"r":0,"t":30,"l":0,"b":0}, coloraxis_showscale=False)  # Adjust top margin for title, remove color scale
-st.plotly_chart(fig)
+    # Find the minimum and maximum rates
+    min_rate = merged_data['rate'].min()
+    max_rate = merged_data['rate'].max()
 
-# Display minimum and maximum rates
-st.write(f"Minimum Rate: {min_rate:.2f}")
-st.write(f"Maximum Rate: {max_rate:.2f}")
+    # Apply color mapping
+    def get_color(value, min_val, max_val):
+        norm_value = (value - min_val) / (max_val - min_val) if max_val > min_val else 0
+        return to_hex(color_scale(norm_value))
+
+    merged_data['color'] = merged_data['rate'].apply(lambda x: get_color(x, min_rate, max_rate))
+
+    # Get detailed crime statistics for hover information
+    def get_crime_details(row):
+        violent_crime_total = row['numerator']
+        agg_assault = data[(data['reportyear'] == selected_year) & (data['geoname'] == row['geoname']) & (data['strata_level_name'] == 'Aggravated assault')]['numerator'].values[0]
+        forcible_rape = data[(data['reportyear'] == selected_year) & (data['geoname'] == row['geoname']) & (data['strata_level_name'] == 'Forcible rape')]['numerator'].values[0]
+        murder_manslaughter = data[(data['reportyear'] == selected_year) & (data['geoname'] == row['geoname']) & (data['strata_level_name'] == 'Murder and non-negligent manslaughter')]['numerator'].values[0]
+        robbery = data[(data['reportyear'] == selected_year) & (data['geoname'] == row['geoname']) & (data['strata_level_name'] == 'Robbery')]['numerator'].values[0]
+        return f"""
+        Total Violent Crime: {violent_crime_total}<br>
+        Aggravated assault: {agg_assault}<br>
+        Forcible Rape: {forcible_rape}<br>
+        Murder and Manslaughter: {murder_manslaughter}<br>
+        Robbery: {robbery}
+        """
+
+    merged_data['crime_details'] = merged_data.apply(get_crime_details, axis=1)
+
+    # Create Heatmap
+    fig = go.Figure(go.Choroplethmapbox(
+        geojson=merged_data.geometry.__geo_interface__,
+        locations=merged_data.index,
+        z=merged_data['rate'],
+        colorscale="Reds",
+        marker_opacity=0.6,
+        marker_line_width=0,
+        text=merged_data['crime_details'],  # hover text
+        hoverinfo='text'
+    ))
+
+    fig.update_layout(
+        mapbox_style="carto-positron",
+        mapbox_zoom=4.5,
+        mapbox_center={"lat": 37.0, "lon": -120.0},
+        margin={"r":0,"t":30,"l":0,"b":0},
+        coloraxis_colorbar=dict(
+            title="Crime Rate"
+        )
+    )
+    st.plotly_chart(fig)
+
+with tab2:
+    st.header("Crime Rate Over Time")
+
+    # Get list of counties
+    counties = sorted(data['geoname'].unique())
+    selected_county = st.selectbox("Select County", counties, index=counties.index("Santa Clara"), key='selected_county')
+
+    # Filter data for 'Violent crime total'
+    data_total = data[data['strata_level_name'] == 'Violent crime total']
+    
+    # Function to create the initial chart
+    def create_chart(county):
+        data_county = data_total[data_total['geoname'] == county]
+        fig2 = go.Figure()
+        fig2.add_trace(go.Scatter(x=data_county['reportyear'], y=data_county['rate'], mode='lines', line=dict(color='magenta')))
+        fig2.update_layout(
+            title=f"Crime Rate in {county} County",
+            xaxis=dict(tickmode='linear', tick0=2000, dtick=1, range=[2000, 2013]),
+            yaxis=dict(title='Crime Rate'),
+            transition={'duration': 300}
+        )
+        return fig2
+
+    # Initial chart rendering
+    fig2 = create_chart(selected_county)
+    chart = st.plotly_chart(fig2, use_container_width=True)
+
+    # Function to update the chart
+    def update_chart():
+        county = st.session_state.selected_county
+        fig2 = create_chart(county)
+        chart.plotly_chart(fig2, use_container_width=True)
+    
+    # Update the chart on selection change
+    update_chart()
