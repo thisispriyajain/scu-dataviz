@@ -3,17 +3,21 @@ import pandas as pd
 import geopandas as gpd
 import plotly.graph_objs as go
 from matplotlib.colors import LinearSegmentedColormap, to_hex
+import requests
+from io import BytesIO
+import json
+from streamlit_chat import message
 
 # Title
 st.title("Violent Crime Rate in California")
 
 # Create tabs
-tab1, tab2 = st.tabs(["Heatmap", "Crime Rate Over Time"])
+tab1, tab2 , tab3= st.tabs(["Heatmap", "Crime Rate Over Time", "CalCrime Bot"])
 
 # Load Dataset
 @st.cache_data
 def load_data():
-    file_path = r'C:\Users\ankit\Downloads\crime_dataset.csv'
+    file_path = r'/Users/aishwaryagupta/Downloads/scu-dataviz-main/DV/crime_dataset.csv'
     data = pd.read_csv(file_path)
     return data
 
@@ -44,7 +48,8 @@ with tab1:
     @st.cache_data
     def load_geojson():
         geojson_url = "https://raw.githubusercontent.com/codeforamerica/click_that_hood/master/public/data/california-counties.geojson"
-        geojson_data = gpd.read_file(geojson_url)
+        geojson_data = gpd.read_file("california-counties.geojson")
+        print("GeoJSON loaded:", geojson_data.head()) 
         return geojson_data
 
     geojson_data = load_geojson()
@@ -144,3 +149,42 @@ with tab2:
     
     # Update the chart on selection change
     update_chart()
+
+with tab3:
+    st.header("CalCrime Bot")
+
+    API_URL = "http://127.0.0.1:5002/ask"
+    headers = {'Content-Type': 'application/json'}
+
+
+    if 'generated' not in st.session_state:
+        st.session_state['generated'] = []
+
+    if 'past' not in st.session_state:
+        st.session_state['past'] = []
+
+    def query(payload):
+        response = requests.post(API_URL, headers=headers, data=json.dumps(payload))
+        return response.text
+
+    def get_text():
+        input_text = st.text_input("You: ","Ask Questions about Crime in California", key="input")
+        return input_text 
+
+
+    user_input = get_text()
+    if user_input:
+        output = query({
+            "prompt": user_input
+        }) 
+        print(output)
+        st.session_state.past.append(user_input)
+        st.session_state.generated.append(output)
+
+    if st.session_state['generated']:
+
+        for i in range(len(st.session_state['generated'])-1, -1, -1):
+            message(st.session_state["generated"][i], key=str(i))
+            message(st.session_state['past'][i], is_user=True, key=str(i) + '_user')
+
+
